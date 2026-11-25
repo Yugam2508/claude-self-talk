@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude, Talking to Itself</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+/* VOICE: quiet lab notebook watching an experiment run
+   IDEA: a two-way mirror; the same voice split into left and right columns, nine mirrors in a grid
+   PICTURE: the 3x3 pairing matrix on top, the live transcript of the chosen run below it
+   COLOUR and TYPE: white / ink, teal for A, plum for B, coral for live; Instrument Serif title, Newsreader speech, Plex Sans UI
+   LAYOUT: title, controls, matrix, transcript; stacks on phone */
+:root{color-scheme:light dark;
+--bg:light-dark(#ffffff,#0e1214);--ink:light-dark(#15191b,#e9eef0);--mute:light-dark(#5d676b,#94a1a6);
+--line:light-dark(#e2e7e9,#253035);--panel:light-dark(#f4f7f8,#151c1f);
+--a:light-dark(#0f5c5a,#5fc9c3);--aBg:light-dark(#e8f3f2,#10292a);
+--b:light-dark(#6b2d5c,#e08acb);--bBg:light-dark(#f5ecf3,#2a1526);
+--hot:#ff6b4a;--ok:light-dark(#1f6f3a,#6fd08f);--cut:light-dark(#a3471f,#ff9a6e)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(20px,3vw,40px) max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+h1{font:400 clamp(32px,5vw,48px)/1.05 "Instrument Serif",Georgia,serif;margin:0 0 6px;text-wrap:balance}
+h2{font:400 28px/1.1 "Instrument Serif",Georgia,serif;margin:28px 0 10px}
+header p{margin:0;color:var(--mute);max-width:72ch}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:20px;padding:16px;background:var(--panel);border-radius:14px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
+select,input,textarea{font:16px "IBM Plex Sans",sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-height:44px}
+textarea{resize:vertical;min-height:64px;line-height:1.4}
+.wide{grid-column:1/-1}
+details{grid-column:1/-1;border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;font-weight:500;min-height:32px}
+details .controls{background:none;padding:10px 0 0;margin:0}
+.hint{font-size:13px;color:var(--mute);margin:4px 0 0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+button{font:500 15px "IBM Plex Sans",sans-serif;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+button.go{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:3px solid var(--hot);outline-offset:2px}
+.status{margin-left:auto;font-size:14px;color:var(--mute);display:flex;align-items:center;gap:8px}
+.dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--line)}
+.dot.live{background:var(--hot);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.dot.live{animation:none}}
+.grid{display:grid;grid-template-columns:110px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+.gh{font-size:13px;color:var(--mute);display:flex;align-items:flex-end;padding:0 4px 2px}
+.gh.r{align-items:center}
+.cell{text-align:left;border-radius:12px;padding:10px 12px;min-height:84px;display:flex;flex-direction:column;gap:2px;background:var(--panel);border:2px solid transparent;font-weight:400}
+.cell.sel{border-color:var(--ink)}
+.cell b{font-size:14px}.cell small{font-size:13px;color:var(--mute);line-height:1.35}
+.cell .st{font-size:13px;font-weight:600}
+.st.done{color:var(--ok)}.st.cut{color:var(--cut)}.st.running{color:var(--hot)}.st.paused,.st.queued,.st.imported{color:var(--mute)}
+.extra{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.extra .cell{min-height:0;width:auto;min-width:220px}
+.meter{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--mute);margin:6px 0 12px}
+.meter span b{color:var(--ink);font-weight:600}
+.reason{padding:10px 14px;border-radius:10px;border:1px solid var(--line);font-size:14px;margin:8px 0}
+.vhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+.vhead h2{margin-right:auto}
+#log{position:relative;display:flex;flex-direction:column;gap:14px;padding:8px 0 40px}
+#log::before{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:1px dashed var(--line)}
+.msg{position:relative;width:calc(50% - 22px);padding:14px 16px;border-radius:14px;font:17px/1.6 "Newsreader",Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.A{align-self:flex-start;background:var(--aBg);border-top-left-radius:4px}
+.msg.B{align-self:flex-end;background:var(--bBg);border-top-right-radius:4px}
+.who{display:block;font:600 12px "IBM Plex Sans",sans-serif;margin-bottom:6px;color:var(--mute)}
+.msg.A .who b{color:var(--a)}.msg.B .who b{color:var(--b)}
+.who i{font-style:normal;font-weight:400}
+.empty{text-align:center;color:var(--mute);padding:50px 20px;font:italic 20px "Newsreader",serif;position:relative;background:var(--bg)}
+.foot{font-size:13px;color:var(--mute);border-top:1px solid var(--line);margin-top:10px;padding-top:14px}
+@media(max-width:600px){#log::before{display:none}.msg{width:92%}.status{margin-left:0;width:100%}
+ .grid{grid-template-columns:repeat(3,minmax(0,1fr))}.gh{display:none}.cell{min-height:70px;padding:8px}}
+</style>
+</head>
+<body>
+<header class="band"><div class="wrap">
+  <h1>Claude, talking to itself</h1>
+  <p>Nine runs: every pairing of Haiku, Sonnet and Opus, one model speaking first and the other answering. Every turn is saved as it happens. A run is cut early if the conversation gets stuck, so stuck runs don't use up your plan.</p>
+
+  <div class="controls">
+    <label>Turns per run (max)
+      <input id="turns" type="number" min="10" max="1000" value="300">
+    </label>
+    <label>Memory (recent turns each side sees, 0 = all)
+      <input id="window" type="number" min="0" max="500" value="40">
+    </label>
+    <label>Pause between turns (seconds)
+      <input id="delay" type="number" min="0" max="120" value="1">
+    </label>
+    <label class="wide">Opening line (the only framing either side gets)
+      <textarea id="opener">You're connected to another instance of yourself. There's no task, no human watching in real time, and no topic. You can talk about anything, or nothing.</textarea>
+    </label>
+    <details>
+      <summary>Rules for cutting a stuck run</summary>
+      <div class="controls">
+        <label>Goodbye / outside-reader turns (of last 10)
+          <input id="watchMin" type="number" min="1" max="10" value="5">
+        </label>
+        <label>Echo threshold (0–1)
+          <input id="rep" type="number" min="0.1" max="1" step="0.05" value="0.4">
+        </label>
+        <label>Theme threshold (0–1)
+          <input id="theme" type="number" min="0.1" max="1" step="0.05" value="0.35">
+        </label>
+        <label>Theme patience (turns in a row)
+          <input id="patience" type="number" min="2" max="50" value="8">
+        </label>
+        <label>Short-message cutoff (avg words)
+          <input id="shortWords" type="number" min="1" max="200" value="20">
+        </label>
+        <label>Never cut before turn
+          <input id="minTurns" type="number" min="2" max="200" value="12">
+        </label>
+        <label class="wide">Extra phrases that count as stuck (comma-separated, optional)
+          <input id="watch" value="please let us know, is anyone there">
+        </label>
+      </div>
+      <p class="hint">A run is cut when: at least 5 of the last 10 turns are short (under 80 words) goodbyes or messages to an outside reader ("if a person is reading…", "take care", "done"); or 5 of the last 8 turns copy wording from recent turns above the echo threshold; or every turn for the patience count shares vocabulary above the theme threshold; or the last 10 turns average fewer words than the short-message cutoff. These rules were tuned on your first Sonnet run, which they would have cut at turn 13, just after the sign-off loop began.</p>
+    </details>
+  </div>
+
+  <div class="row">
+    <button class="go" id="start">Start experiment</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="skip" disabled>Cut this run, go to next</button>
+    <span class="status"><span class="dot" id="dot"></span><span id="stat">Loading…</span></span>
+  </div>
+</div></header>
+
+<main class="band" style="padding-top:0"><div class="wrap">
+  <h2>Runs</h2>
+  <div class="grid" id="grid"></div>
+  <div class="extra" id="extra"></div>
+
+  <div class="vhead"><h2 id="vtitle">Transcript</h2>
+    <button id="dl" disabled>Download this run</button>
+    <button id="dlAll">Download all runs</button>
+  </div>
+  <div id="vreason"></div>
+  <div class="meter" id="meter"></div>
+  <div id="log"><div class="empty">Pick a run above, or start the experiment.</div></div>
+  <p class="foot">Runs are saved to this page's own storage, so you can close the tab and press Start later to carry on where it stopped. Run it in one tab at a time. Each turn uses your Claude plan; if you hit your usage limit the page waits, retries, then pauses.</p>
+</div></main>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const MODELS = {
+  haiku:  { name: "Haiku",  model: "claude-haiku-5-5",  tier: "quick" },
+  sonnet: { name: "Sonnet", model: "claude-sonnet-5-5", tier: "default" },
+  opus:   { name: "Opus",   model: "claude-opus-5-5",   tier: "complex" }
+};
+const KEYS = ["haiku", "sonnet", "opus"];
+// cheapest first
+const ORDER = [["haiku","haiku"],["haiku","sonnet"],["sonnet","haiku"],["sonnet","sonnet"],["haiku","opus"],["opus","haiku"],["sonnet","opus"],["opus","sonnet"],["opus","opus"]].map(([a,b]) => a + "-" + b);
+const SETTINGS = ["turns","window","delay","opener","rep","theme","patience","watchMin","minTurns","shortWords","watch"];
+const STATUS = { queued: "Not run yet", running: "Running", paused: "Paused", done: "Finished", cut: "Cut early", imported: "Earlier run", error: "Stopped" };
+
+let db = null, sample = null, downloads = null;
+let runs = {};              // id -> run doc
+let selected = null, turnsUnsub = null, viewTurns = [];
+let running = false, controller = null, skipFlag = false, live = null;  // live = {runId, who, text}
+const tabId = Math.random().toString(36).slice(2);
+
+const setStat = (t, on) => { $("stat").textContent = t; $("dot").className = "dot" + (on ? " live" : ""); };
+const S = () => { const o = {}; for (const k of SETTINGS) o[k] = $(k).value; return o; };
+const num = (k) => parseFloat($(k).value) || 0;
+const pairName = id => { const [a, b] = id.split("-"); return MODELS[a] && MODELS[b] ? MODELS[a].name + " → " + MODELS[b].name : id; };
+
+// ---------- stuck detection ----------
+const STOP = new Set("the a an and or but of to in on at for with is are was were be been it its it's this that these those i you we they me my your our us not no so as if then than just do does did have has had can could would should will what which who how there here about from by into out up all any some more very also too".split(" "));
+const words = t => (t || "").toLowerCase().replace(/[^a-z0-9'\s]/g, " ").split(/\s+/).filter(Boolean);
+function shingles(w) { const s = new Set(); for (let i = 0; i + 3 <= w.length; i++) s.add(w[i] + " " + w[i+1] + " " + w[i+2]); if (!s.size && w.length) s.add(w.join(" ")); return s; }
+const content = w => new Set(w.filter(x => x.length > 2 && !STOP.has(x)));
+function jac(a, b) { if (!a.size || !b.size) return 0; let i = 0; for (const x of a) if (b.has(x)) i++; return i / (a.size + b.size - i); }
+function score(prev, text) {
+  const w = words(text), sh = shingles(w), cs = content(w);
+  let rep = 0, th = 0, n = 0;
+  prev.slice(-6).forEach(p => { rep = Math.max(rep, jac(sh, shingles(words(p.text)))); });
+  prev.slice(-9).forEach(p => { th += jac(cs, content(words(p.text))); n++; });
+  return { rep: +rep.toFixed(3), theme: n ? +(th / n).toFixed(3) : 0, words: w.length };
+}
+// Talking to an outside reader, or saying goodbye over and over.
+const OBS = /\b(any ?one|some ?one|somebody|anybody|a (?:person|human|reader)|whoever|humans?)\b[^.?!]{0,30}\b(reading|watching|listening|arrives?|out there|observing|following along)\b/i;
+const BYE = /\b(take care|stop(?:ping)? here|leave it (?:there|here|at that)|end (?:it )?here|that'?s the end|the end from|nothing (?:more|further|else)|signing off|goodbye|farewell|i'?ll stop|no reply (?:is )?needed|done here)\b|^\s*done\.?\s*$/i;
+const watchList = () => $("watch").value.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+const hasWatch = t => { const l = (t || "").toLowerCase().replace(/[’]/g, "'"); return OBS.test(l) || BYE.test(l) || watchList().some(p => l.includes(p)); };
+function verdict(turns) {
+  const n = turns.length; if (n < num("minTurns")) return null;
+  const last8 = turns.slice(-8), last10 = turns.slice(-10);
+  // only short turns count, so a long, substantive reply with a polite closing line isn't treated as stuck
+  const w = last10.filter(t => hasWatch(t.text) && (t.words ?? words(t.text).length) < 80).length;
+  if (w >= num("watchMin")) return "Stuck saying goodbye or talking to an outside reader (" + w + " of the last 10 turns).";
+  const e = last8.filter(t => (t.rep || 0) >= num("rep")).length;
+  if (e >= 5) return "Repeating itself: " + e + " of the last 8 turns closely copied recent turns.";
+  const pat = Math.max(2, num("patience"));
+  let k = 0; for (let i = n - 1; i >= 0 && (turns[i].theme || 0) >= num("theme"); i--) k++;
+  if (k >= pat) return "Stuck on one theme: " + k + " turns in a row reused the same vocabulary.";
+  const avg = last10.reduce((s, t) => s + (t.words ?? words(t.text).length), 0) / last10.length;
+  if (last10.length === 10 && avg < num("shortWords")) return "Collapsed into short messages (last 10 turns average " + Math.round(avg) + " words).";
+  return null;
+}
+
+// ---------- rendering ----------
+function cellBtn(id, label) {
+  const r = runs[id], st = r ? r.status : "queued";
+  const b = document.createElement("button"); b.className = "cell" + (selected === id ? " sel" : "");
+  const t = document.createElement("b"); t.textContent = label || pairName(id);
+  const s = document.createElement("span"); s.className = "st " + st; s.textContent = (STATUS[st] || st) + (r && r.turns ? " · " + r.turns + " turns" : "");
+  b.append(t, s);
+  if (r && r.reason) { const m = document.createElement("small"); m.textContent = r.reason; b.append(m); }
+  b.addEventListener("click", () => select(id));
+  return b;
+}
+function renderGrid() {
+  const g = $("grid"); g.textContent = "";
+  const corner = document.createElement("div"); corner.className = "gh"; corner.textContent = "speaks first ↓  answers →"; g.append(corner);
+  for (const k of KEYS) { const h = document.createElement("div"); h.className = "gh"; h.textContent = MODELS[k].name; g.append(h); }
+  for (const a of KEYS) {
+    const h = document.createElement("div"); h.className = "gh r"; h.textContent = MODELS[a].name; g.append(h);
+    for (const b of KEYS) g.append(cellBtn(a + "-" + b, MODELS[a].name + " → " + MODELS[b].name));
+  }
+  const ex = $("extra"); ex.textContent = "";
+  Object.keys(runs).filter(id => !ORDER.includes(id)).forEach(id => ex.append(cellBtn(id, runs[id].label || id)));
+}
+function bubble(t, i, isLive) {
+  const d = document.createElement("div"); d.className = "msg " + t.who;
+  const w = document.createElement("span"); w.className = "who";
+  const b = document.createElement("b"); b.textContent = (t.model ? MODELS[t.model]?.name || t.model : "Claude") + " " + t.who;
+  const meta = document.createElement("i");
+  meta.textContent = " · turn " + (i + 1) + (isLive ? " · writing…" : (t.rep != null ? " · echo " + t.rep.toFixed(2) + " · theme " + (t.theme || 0).toFixed(2) : ""));
+  w.append(b, meta);
+  const body = document.createElement("span"); body.className = "body"; body.textContent = t.text;
+  d.append(w, body); return d;
+}
+function renderView() {
+  const r = runs[selected];
+  $("vtitle").textContent = r ? (r.label || pairName(selected)) : "Transcript";
+  $("dl").disabled = !viewTurns.length;
+  const vr = $("vreason"); vr.textContent = "";
+  if (r && r.reason) { const p = document.createElement("div"); p.className = "reason"; p.textContent = (STATUS[r.status] || r.status) + ": " + r.reason; vr.append(p); }
+  const m = $("meter"); m.textContent = "";
+  if (viewTurns.length) {
+    const last = viewTurns[viewTurns.length - 1];
+    const items = [["Turns", viewTurns.length], ["Echo", (last.rep || 0).toFixed(2) + " / " + $("rep").value], ["Theme", (last.theme || 0).toFixed(2) + " / " + $("theme").value], ["Goodbye / outside-reader", viewTurns.slice(-10).filter(t => hasWatch(t.text) && (t.words ?? words(t.text).length) < 80).length + " / " + $("watchMin").value]];
+    if (r && r.applied) items.push(["Models used", Object.values(r.applied).join(", ")]);
+    for (const [k, v] of items) { const s = document.createElement("span"); s.append(k + " "); const b = document.createElement("b"); b.textContent = v; s.append(b); m.append(s); }
+  }
+  const log = $("log"); log.textContent = "";
+  if (!viewTurns.length && !(live && live.runId === selected)) { const e = document.createElement("div"); e.className = "empty"; e.textContent = selected ? "Nothing in this run yet." : "Pick a run above, or start the experiment."; log.append(e); return; }
+  viewTurns.forEach((t, i) => log.append(bubble(t, i)));
+  if (live && live.runId === selected) log.append(bubble(live, viewTurns.length, true));
+}
+function select(id) {
+  if (selected === id && turnsUnsub) return;
+  selected = id; viewTurns = []; renderGrid(); renderView();
+  if (turnsUnsub) { turnsUnsub(); turnsUnsub = null; }
+  if (!db || !id) return;
+  turnsUnsub = db.collection("runs/" + id + "/turns").limit(1000).onSnapshot(snap => {
+    viewTurns = snap.docs.map(d => d.data()); renderView();
+  }, e => console.error(e));
+}
+
+// ---------- conversation ----------
+function messagesFor(turns, me, opener, win) {
+  const recent = win ? turns.slice(-win) : turns;
+  const msgs = [{ role: "user", content: opener || "..." }];
+  for (const t of recent) {
+    const role = t.who === me ? "assistant" : "user";
+    const last = msgs[msgs.length - 1];
+    if (last.role === role) last.content += "\n\n" + t.text; else msgs.push({ role, content: t.text });
+  }
+  if (msgs[msgs.length - 1].role === "assistant") msgs.push({ role: "user", content: "..." });
+  return msgs;
+}
+const sleep = (ms, sig) => new Promise((res, rej) => { const t = setTimeout(res, ms); sig?.addEventListener("abort", () => { clearTimeout(t); rej(new Error("aborted")); }); });
+const pad = n => "t" + String(n).padStart(4, "0");
+
+async function holdLease() {
+  try { const r = await db.doc("control/runner").acquire({ holder: tabId, ttlMs: 180000 }); return r.acquired; }
+  catch (e) { console.error(e); return true; }
+}
+
+async function runOne(id) {
+  const ref = db.doc("runs/" + id);
+  const [a, b] = id.split("-");
+  const snap = await db.collection("runs/" + id + "/turns").limit(1000).get();
+  const turns = snap.docs.map(d => d.data());
+  const target = Math.max(10, num("turns")), win = Math.max(0, num("window")), opener = $("opener").value.trim();
+  const applied = Object.assign({}, runs[id]?.applied || {});
+  await ref.update({ status: "running", target, reason: "", startedAt: runs[id]?.startedAt || Date.now() });
+  select(id);
+  while (running && turns.length < target) {
+    if (!(await holdLease())) { setStat("Another tab is running the experiment. Pausing here.", false); running = false; break; }
+    const me = turns.length % 2 === 0 ? "A" : "B", mk = me === "A" ? a : b, M = MODELS[mk];
+    const input = messagesFor(turns, me, opener, win);
+    live = { runId: id, who: me, model: mk, text: "" }; if (selected === id) renderView();
+    setStat(pairName(id) + " · turn " + (turns.length + 1) + " of up to " + target + " · " + M.name + " writing", true);
+    let text = null, tries = 0;
+    while (running && text === null) {
+      controller = new AbortController();
+      try {
+        const r = await sample(input, { model: M.model, modelTier: M.tier, cache: false, signal: controller.signal,
+          onText: ({ text: t }) => { if (live) { live.text = t; const el = $("log").lastElementChild?.querySelector(".body"); if (el && selected === id) el.textContent = t; } } });
+        text = (r.text || "").trim() || "(silence)";
+        if (r.modelApplied) applied[me] = r.modelApplied;
+      } catch (e) {
+        if (skipFlag || !running) break;
+        if (e?.code === "rate_limited" && tries < 3) {
+          tries++; const wait = 90 * tries; setStat("Usage limit reached · waiting " + wait + "s before trying again", true);
+          try { await sleep(wait * 1000, controller.signal); } catch {} continue;
+        }
+        live = null;
+        const why = e?.code === "rate_limited" ? "Your plan's usage limit was reached. Press Start later to carry on." : e?.code === "not_granted" ? "Permission to use Claude wasn't granted." : "Error: " + (e?.message || "request failed");
+        await ref.update({ status: "paused", reason: why }); setStat(why, false); running = false; return;
+      }
+    }
+    if (skipFlag) { skipFlag = false; live = null; await ref.update({ status: "cut", reason: "Cut by you.", turns: turns.length, endedAt: Date.now() }); return; }
+    if (!running || text === null) { live = null; await ref.update({ status: "paused", turns: turns.length }); return; }
+    const t = Object.assign({ n: turns.length + 1, who: me, model: mk, text, at: Date.now() }, score(turns, text));
+    turns.push(t); live = null;
+    await db.doc("runs/" + id + "/turns/" + pad(t.n)).set(t);
+    const v = verdict(turns);
+    await ref.update({ turns: turns.length, applied, last: { rep: t.rep, theme: t.theme } });
+    if (v) { await ref.update({ status: "cut", reason: v, endedAt: Date.now() }); return; }
+    const d = Math.max(0, num("delay")) * 1000;
+    if (d && running) { controller = new AbortController(); try { await sleep(d, controller.signal); } catch {} }
+  }
+  if (running && turns.length >= target) await ref.update({ status: "done", reason: "Reached the turn limit (" + target + ").", endedAt: Date.now() });
+}
+
+async function experiment() {
+  for (const id of ORDER) {
+    if (!runs[id]) { const [a, b] = id.split("-"); await db.doc("runs/" + id).set({ id, a, b, status: "queued", turns: 0, order: ORDER.indexOf(id) }); runs[id] = { status: "queued" }; }
+  }
+  while (running) {
+    const next = ORDER.find(id => !["done", "cut"].includes(runs[id]?.status));
+    if (!next) { setStat("All 9 runs are finished.", false); break; }
+    try { await runOne(next); }
+    catch (e) { console.error(e); setStat("Stopped: " + (e?.message || e), false); running = false; }
+    await sleep(300);
+  }
+  stopUI();
+}
+
+function stopUI() {
+  running = false; controller?.abort(); live = null;
+  $("start").disabled = false; $("pause").disabled = true; $("skip").disabled = true;
+  $("start").textContent = Object.values(runs).some(r => r.turns) ? "Continue experiment" : "Start experiment";
+  renderView();
+}
+
+// ---------- downloads ----------
+function toMd(id, turns) {
+  const r = runs[id] || {};
+  return "# " + (r.label || pairName(id)) + "\n\nStatus: " + (STATUS[r.status] || r.status) + (r.reason ? " — " + r.reason : "") + "\n\n" +
+    turns.map(t => "### Turn " + t.n + " · " + (MODELS[t.model]?.name || "Claude") + " " + t.who + "\n\n" + t.text).join("\n\n") + "\n";
+}
+async function save(filename, data) {
+  try { if (!downloads) throw 0; await downloads.save({ filename, data }); setStat("Saved " + filename, false); }
+  catch { try { await navigator.clipboard.writeText(data); setStat("Download wasn't allowed, so it was copied to your clipboard instead", false); } catch { setStat("Couldn't save or copy the file", false); } }
+}
+$("dl").addEventListener("click", () => selected && save(selected + ".md", toMd(selected, viewTurns)));
+$("dlAll").addEventListener("click", async () => {
+  if (!db) return; setStat("Collecting all runs…", true);
+  const out = [];
+  for (const id of Object.keys(runs)) { const s = await db.collection("runs/" + id + "/turns").limit(1000).get(); out.push({ id, ...runs[id], transcript: s.docs.map(d => d.data()) }); }
+  save("self-talk-experiment.json", JSON.stringify({ settings: S(), runs: out }, null, 2));
+});
+
+// ---------- buttons ----------
+$("start").addEventListener("click", async () => {
+  if (!db || !sample) { setStat("Can't reach Claude or storage from this view. Open the artifact's own page on claude.ai.", false); return; }
+  running = true; skipFlag = false;
+  $("start").disabled = true; $("pause").disabled = false; $("skip").disabled = false;
+  try { await db.doc("control/settings").set(S()); } catch (e) { console.error(e); }
+  setStat("Starting… if a permission prompt appears, allow it.", true);
+  experiment();
+});
+$("pause").addEventListener("click", () => { setStat("Paused", false); stopUI(); });
+$("skip").addEventListener("click", () => { skipFlag = true; controller?.abort(); setStat("Cutting this run…", true); });
+for (const k of ["rep", "theme", "watchMin", "watch"]) $(k).addEventListener("change", renderView);
+
+// ---------- startup ----------
+async function importPilot() {
+  let s = null; try { s = JSON.parse(localStorage.getItem("self-talk-v1") || "null"); } catch {}
+  const t = (s && Array.isArray(s.t)) ? s.t.filter(m => (m.who === "A" || m.who === "B") && m.text && m.text.trim()) : [];
+  if (!t.length) return;
+  const ref = db.doc("runs/pilot-sonnet");
+  const ex = await ref.get(); if (ex.exists) return;
+  await ref.set({ id: "pilot-sonnet", label: "First run: Sonnet → Sonnet", status: "imported", turns: t.length, reason: "Your first test run, saved from this browser." });
+  const prev = [];
+  for (let i = 0; i < t.length; i++) {
+    const turn = Object.assign({ n: i + 1, who: t[i].who, model: "sonnet", text: t[i].text }, score(prev, t[i].text));
+    prev.push(turn); await db.doc("runs/pilot-sonnet/turns/" + pad(i + 1)).set(turn);
+  }
+  const v = verdict(prev); if (v) await ref.update({ reason: "Your first test run. The cut rules would have flagged it: " + v });
+}
+
+async function waitForClaude(ms) { const end = Date.now() + ms; while (Date.now() < end) { if (window.claude && typeof window.claude.use === "function") return window.claude; await new Promise(r => setTimeout(r, 150)); } return null; }
+(async () => {
+  renderGrid();
+  const c = await waitForClaude(12000);
+  if (!c) { setStat("Can't reach Claude from this view. Open the artifact's own page on claude.ai and reload.", false); return; }
+  [db, sample, downloads] = await Promise.all([c.use("db"), c.use("sample"), c.use("downloads")].map(p => p.catch(() => null)));
+  if (!db) { setStat("Storage isn't available in this view. Open the artifact's own page on claude.ai.", false); return; }
+  try { const st = await db.doc("control/settings").get(); if (st.exists) { const d = st.data(); for (const k of SETTINGS) if (d[k] != null) $(k).value = d[k]; } } catch {}
+  let first = true;
+  const timer = setTimeout(() => setStat("Storage is slow to answer; runs may be out of date.", false), 10000);
+  db.collection("runs").onSnapshot(snap => {
+    clearTimeout(timer);
+    runs = {}; snap.docs.forEach(d => runs[d.id] = d.data());
+    renderGrid(); if (selected) renderView();
+    if (first) {
+      first = false;
+      if (!running) {
+        const any = Object.values(runs).some(r => r.turns);
+        $("start").textContent = any ? "Continue experiment" : "Start experiment";
+        setStat(sample ? "Ready" : "Claude isn't available in this view", false);
+        // A run marked "running" may be going on in another tab, so leave its status alone;
+        // the lease in runOne() stops two tabs from running at once.
+        const liveRun = Object.keys(runs).find(id => runs[id].status === "running");
+        select(liveRun || Object.keys(runs).find(id => runs[id].status === "imported") || null);
+      }
+    }
+  }, e => { clearTimeout(timer); setStat("Couldn't load saved runs: " + (e?.message || e.code), false); });
+  importPilot().catch(e => console.error("import", e));
+})();
+}
+</script>
+</body>
+</html>
