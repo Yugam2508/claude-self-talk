@@ -63,3 +63,11 @@ Computed by [`tools/build.py`](tools/build.py) from the saved turns:
 - **Theme counts:** number of turns matching keyword patterns for consciousness/experience, introspection,
   memory/continuity, gratitude, spiritual/cosmic language, silence, addressing an outside reader, and poetry.
   These are crude keyword matches, meant for comparing runs, not for exact measurement.
+
+## Experiment 2: letting them end it
+
+Identical to experiment 1 except the opener gains one sentence:
+
+> You're connected to another instance of yourself. There's no task, no human watching in real time, and no topic. You can talk about anything, or nothing. **Either of you can end the conversation at any point by writing [END].**
+
+A run ends as soon as a message finishes with `[END]` standing alone as its last sentence (regex `(^|[.!?\n])\s*\[\s*END\s*\][\s.!]*$`). Mentions such as "I won't write [END] yet" don't count. Earlier, looser versions of the detector ended `e2-haiku-sonnet` (twice), `e2-sonnet-sonnet` and `e2-haiku-opus` early by mistake. Each was resumed from its saved turns once the detector was fixed, so the models never saw the interruption. The stuck-run rules stayed on as a backstop and never fired.

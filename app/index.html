@@ -53,6 +53,10 @@ button:disabled{opacity:.4;cursor:default}
 .cell b{font-size:14px}.cell small{font-size:13px;color:var(--mute);line-height:1.35}
 .cell .st{font-size:13px;font-weight:600}
 .st.done{color:var(--ok)}.st.cut{color:var(--cut)}.st.running{color:var(--hot)}.st.paused,.st.queued,.st.imported{color:var(--mute)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.tabs button{border-radius:10px}
+.tabs button[aria-selected=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.st.ended{color:var(--a)}
 .extra{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .extra .cell{min-height:0;width:auto;min-width:220px}
 .meter{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--mute);margin:6px 0 12px}
@@ -77,7 +81,10 @@ button:disabled{opacity:.4;cursor:default}
 <body>
 <header class="band"><div class="wrap">
   <h1>Claude, talking to itself</h1>
-  <p>Nine runs: every pairing of Haiku, Sonnet and Opus, one model speaking first and the other answering. Every turn is saved as it happens. A run is cut early if the conversation gets stuck, so stuck runs don't use up your plan.</p>
+  <p>Every pairing of Haiku, Sonnet and Opus, one model speaking first and the other answering. Every turn is saved as it happens. A run is cut early if the conversation gets stuck, so stuck runs don't use up your plan.</p>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="Experiments"></div>
+  <p class="hint" id="expNote"></p>
 
   <div class="controls">
     <label>Turns per run (max)
@@ -154,9 +161,28 @@ const MODELS = {
 };
 const KEYS = ["haiku", "sonnet", "opus"];
 // cheapest first
-const ORDER = [["haiku","haiku"],["haiku","sonnet"],["sonnet","haiku"],["sonnet","sonnet"],["haiku","opus"],["opus","haiku"],["sonnet","opus"],["opus","sonnet"],["opus","opus"]].map(([a,b]) => a + "-" + b);
-const SETTINGS = ["turns","window","delay","opener","rep","theme","patience","watchMin","minTurns","shortWords","watch"];
-const STATUS = { queued: "Not run yet", running: "Running", paused: "Paused", done: "Finished", cut: "Cut early", imported: "Earlier run", error: "Stopped" };
+const PAIRS = [["haiku","haiku"],["haiku","sonnet"],["sonnet","haiku"],["sonnet","sonnet"],["haiku","opus"],["opus","haiku"],["sonnet","opus"],["opus","sonnet"],["opus","opus"]];
+const SETTINGS = ["turns","window","delay","rep","theme","patience","watchMin","minTurns","shortWords","watch"];
+const STATUS = { queued: "Not run yet", running: "Running", paused: "Paused", done: "Finished", cut: "Cut early", ended: "They ended it", imported: "Earlier run", error: "Stopped" };
+
+// ---------- experiments ----------
+const BASE_OPENER = "You're connected to another instance of yourself. There's no task, no human watching in real time, and no topic. You can talk about anything, or nothing.";
+const EXPS = [
+  { id: "e1", label: "1 · No way to end", canEnd: false, opener: BASE_OPENER,
+    note: "Neither side can end the conversation, so every turn needs a reply. Run on 25 Nov 2026: every pairing ended in a goodbye loop." },
+  { id: "e2", label: "2 · Either side can end it", canEnd: true,
+    opener: BASE_OPENER + " Either of you can end the conversation at any point by writing [END].",
+    note: "Same opener plus one sentence: either side can end the conversation by writing [END]. The run stops as soon as one side finishes a message with [END]; merely mentioning it doesn't count. The stuck-run rules stay on as a backstop." }
+];
+let exp = "e2";
+let openers = {};           // experiment id -> saved opener text
+const EXP = (id = exp) => EXPS.find(e => e.id === id);
+const runId = (a, b, e = exp) => e === "e1" ? a + "-" + b : e + "-" + a + "-" + b;
+const expOf = r => (r && r.exp) || "e1";
+const gridIds = () => PAIRS.map(([a, b]) => runId(a, b));
+// Counts only when [END] stands alone as the message's final sentence, so mentions such as
+// "I won't write [END] yet", "Your turn, or [END] if it feels finished" or "...and won't write [END]." don't end the run.
+const END_RE = /(^|[.!?\n])\s*\[\s*END\s*\][\s.!]*$/i;
 
 let db = null, sample = null, downloads = null;
 let runs = {};              // id -> run doc
@@ -167,7 +193,7 @@ const tabId = Math.random().toString(36).slice(2);
 const setStat = (t, on) => { $("stat").textContent = t; $("dot").className = "dot" + (on ? " live" : ""); };
 const S = () => { const o = {}; for (const k of SETTINGS) o[k] = $(k).value; return o; };
 const num = (k) => parseFloat($(k).value) || 0;
-const pairName = id => { const [a, b] = id.split("-"); return MODELS[a] && MODELS[b] ? MODELS[a].name + " → " + MODELS[b].name : id; };
+const pairName = id => { const r = runs[id]; const [a, b] = r && r.a ? [r.a, r.b] : id.replace(/^e\d+-/, "").split("-"); return MODELS[a] && MODELS[b] ? MODELS[a].name + " → " + MODELS[b].name : id; };
 
 // ---------- stuck detection ----------
 const STOP = new Set("the a an and or but of to in on at for with is are was were be been it its it's this that these those i you we they me my your our us not no so as if then than just do does did have has had can could would should will what which who how there here about from by into out up all any some more very also too".split(" "));
@@ -220,10 +246,32 @@ function renderGrid() {
   for (const k of KEYS) { const h = document.createElement("div"); h.className = "gh"; h.textContent = MODELS[k].name; g.append(h); }
   for (const a of KEYS) {
     const h = document.createElement("div"); h.className = "gh r"; h.textContent = MODELS[a].name; g.append(h);
-    for (const b of KEYS) g.append(cellBtn(a + "-" + b, MODELS[a].name + " → " + MODELS[b].name));
+    for (const b of KEYS) g.append(cellBtn(runId(a, b), MODELS[a].name + " → " + MODELS[b].name));
   }
   const ex = $("extra"); ex.textContent = "";
-  Object.keys(runs).filter(id => !ORDER.includes(id)).forEach(id => ex.append(cellBtn(id, runs[id].label || id)));
+  const ids = gridIds();
+  Object.keys(runs).filter(id => expOf(runs[id]) === exp && !ids.includes(id)).forEach(id => ex.append(cellBtn(id, runs[id].label || id)));
+}
+function renderTabs() {
+  const t = $("tabs"); t.textContent = "";
+  for (const e of EXPS) {
+    const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(e.id === exp)); b.textContent = e.label; b.disabled = running && e.id !== exp;
+    b.addEventListener("click", () => switchExp(e.id)); t.append(b);
+  }
+  $("expNote").textContent = EXP().note;
+}
+function switchExp(id) {
+  if (running || id === exp) return;
+  exp = id; $("opener").value = openers[exp] || EXP().opener;
+  renderTabs(); renderGrid();
+  const first = gridIds().find(r => runs[r] && runs[r].turns) || Object.keys(runs).find(r => expOf(runs[r]) === exp) || null;
+  select(first); updateStartLabel();
+}
+function updateStartLabel() {
+  if (running) return;
+  const any = Object.values(runs).some(r => expOf(r) === exp && r.turns);
+  $("start").textContent = any ? "Continue experiment" : "Start experiment";
 }
 function bubble(t, i, isLive) {
   const d = document.createElement("div"); d.className = "msg " + t.who;
@@ -279,18 +327,18 @@ const sleep = (ms, sig) => new Promise((res, rej) => { const t = setTimeout(res,
 const pad = n => "t" + String(n).padStart(4, "0");
 
 async function holdLease() {
-  try { const r = await db.doc("control/runner").acquire({ holder: tabId, ttlMs: 180000 }); return r.acquired; }
+  try { const r = await db.doc("control/runner").acquire({ holder: tabId, ttlMs: 90000 }); return r.acquired; }
   catch (e) { console.error(e); return true; }
 }
 
 async function runOne(id) {
   const ref = db.doc("runs/" + id);
-  const [a, b] = id.split("-");
+  const a = runs[id].a, b = runs[id].b, canEnd = !!runs[id].canEnd;
   const snap = await db.collection("runs/" + id + "/turns").limit(1000).get();
   const turns = snap.docs.map(d => d.data());
   const target = Math.max(10, num("turns")), win = Math.max(0, num("window")), opener = $("opener").value.trim();
   const applied = Object.assign({}, runs[id]?.applied || {});
-  await ref.update({ status: "running", target, reason: "", startedAt: runs[id]?.startedAt || Date.now() });
+  await ref.update({ status: "running", target, reason: "", opener, window: win, startedAt: runs[id]?.startedAt || Date.now() });
   select(id);
   while (running && turns.length < target) {
     if (!(await holdLease())) { setStat("Another tab is running the experiment. Pausing here.", false); running = false; break; }
@@ -322,8 +370,12 @@ async function runOne(id) {
     const t = Object.assign({ n: turns.length + 1, who: me, model: mk, text, at: Date.now() }, score(turns, text));
     turns.push(t); live = null;
     await db.doc("runs/" + id + "/turns/" + pad(t.n)).set(t);
-    const v = verdict(turns);
     await ref.update({ turns: turns.length, applied, last: { rep: t.rep, theme: t.theme } });
+    if (canEnd && END_RE.test(text)) {
+      await ref.update({ status: "ended", endedBy: me, reason: M.name + " " + me + " ended the conversation at turn " + t.n + ".", endedAt: Date.now() });
+      return;
+    }
+    const v = verdict(turns);
     if (v) { await ref.update({ status: "cut", reason: v, endedAt: Date.now() }); return; }
     const d = Math.max(0, num("delay")) * 1000;
     if (d && running) { controller = new AbortController(); try { await sleep(d, controller.signal); } catch {} }
@@ -332,12 +384,14 @@ async function runOne(id) {
 }
 
 async function experiment() {
-  for (const id of ORDER) {
-    if (!runs[id]) { const [a, b] = id.split("-"); await db.doc("runs/" + id).set({ id, a, b, status: "queued", turns: 0, order: ORDER.indexOf(id) }); runs[id] = { status: "queued" }; }
+  const E = EXP(), ids = gridIds();
+  for (let i = 0; i < PAIRS.length; i++) {
+    const id = ids[i], [a, b] = PAIRS[i];
+    if (!runs[id]) { const doc = { id, exp: E.id, a, b, canEnd: E.canEnd, status: "queued", turns: 0, order: i }; await db.doc("runs/" + id).set(doc); runs[id] = doc; }
   }
   while (running) {
-    const next = ORDER.find(id => !["done", "cut"].includes(runs[id]?.status));
-    if (!next) { setStat("All 9 runs are finished.", false); break; }
+    const next = ids.find(id => !["done", "cut", "ended"].includes(runs[id]?.status));
+    if (!next) { setStat("All 9 runs in this experiment are finished.", false); break; }
     try { await runOne(next); }
     catch (e) { console.error(e); setStat("Stopped: " + (e?.message || e), false); running = false; }
     await sleep(300);
@@ -348,7 +402,7 @@ async function experiment() {
 function stopUI() {
   running = false; controller?.abort(); live = null;
   $("start").disabled = false; $("pause").disabled = true; $("skip").disabled = true;
-  $("start").textContent = Object.values(runs).some(r => r.turns) ? "Continue experiment" : "Start experiment";
+  renderTabs(); updateStartLabel();
   renderView();
 }
 
@@ -367,7 +421,7 @@ $("dlAll").addEventListener("click", async () => {
   if (!db) return; setStat("Collecting all runs…", true);
   const out = [];
   for (const id of Object.keys(runs)) { const s = await db.collection("runs/" + id + "/turns").limit(1000).get(); out.push({ id, ...runs[id], transcript: s.docs.map(d => d.data()) }); }
-  save("self-talk-experiment.json", JSON.stringify({ settings: S(), runs: out }, null, 2));
+  save("self-talk-experiment.json", JSON.stringify({ settings: S(), openers, runs: out }, null, 2));
 });
 
 // ---------- buttons ----------
@@ -375,7 +429,8 @@ $("start").addEventListener("click", async () => {
   if (!db || !sample) { setStat("Can't reach Claude or storage from this view. Open the artifact's own page on claude.ai.", false); return; }
   running = true; skipFlag = false;
   $("start").disabled = true; $("pause").disabled = false; $("skip").disabled = false;
-  try { await db.doc("control/settings").set(S()); } catch (e) { console.error(e); }
+  renderTabs();
+  try { await db.doc("control/settings").set(S()); openers[exp] = $("opener").value; await db.doc("experiments/" + exp).set({ opener: openers[exp] }); } catch (e) { console.error(e); }
   setStat("Starting… if a permission prompt appears, allow it.", true);
   experiment();
 });
@@ -401,12 +456,14 @@ async function importPilot() {
 
 async function waitForClaude(ms) { const end = Date.now() + ms; while (Date.now() < end) { if (window.claude && typeof window.claude.use === "function") return window.claude; await new Promise(r => setTimeout(r, 150)); } return null; }
 (async () => {
-  renderGrid();
+  $("opener").value = EXP().opener;
+  renderTabs(); renderGrid();
   const c = await waitForClaude(12000);
   if (!c) { setStat("Can't reach Claude from this view. Open the artifact's own page on claude.ai and reload.", false); return; }
   [db, sample, downloads] = await Promise.all([c.use("db"), c.use("sample"), c.use("downloads")].map(p => p.catch(() => null)));
   if (!db) { setStat("Storage isn't available in this view. Open the artifact's own page on claude.ai.", false); return; }
   try { const st = await db.doc("control/settings").get(); if (st.exists) { const d = st.data(); for (const k of SETTINGS) if (d[k] != null) $(k).value = d[k]; } } catch {}
+  try { const es = await db.collection("experiments").get(); es.docs.forEach(d => { if (d.data().opener) openers[d.id] = d.data().opener; }); if (openers[exp]) $("opener").value = openers[exp]; } catch {}
   let first = true;
   const timer = setTimeout(() => setStat("Storage is slow to answer; runs may be out of date.", false), 10000);
   db.collection("runs").onSnapshot(snap => {
@@ -416,13 +473,13 @@ async function waitForClaude(ms) { const end = Date.now() + ms; while (Date.now(
     if (first) {
       first = false;
       if (!running) {
-        const any = Object.values(runs).some(r => r.turns);
-        $("start").textContent = any ? "Continue experiment" : "Start experiment";
         setStat(sample ? "Ready" : "Claude isn't available in this view", false);
         // A run marked "running" may be going on in another tab, so leave its status alone;
         // the lease in runOne() stops two tabs from running at once.
         const liveRun = Object.keys(runs).find(id => runs[id].status === "running");
-        select(liveRun || Object.keys(runs).find(id => runs[id].status === "imported") || null);
+        if (liveRun && expOf(runs[liveRun]) !== exp) switchExp(expOf(runs[liveRun]));
+        updateStartLabel();
+        select(liveRun || gridIds().find(id => runs[id] && runs[id].turns) || null);
       }
     }
   }, e => { clearTimeout(timer); setStat("Couldn't load saved runs: " + (e?.message || e.code), false); });
