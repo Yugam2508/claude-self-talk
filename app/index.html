@@ -53,6 +53,7 @@ button:disabled{opacity:.4;cursor:default}
 .cell b{font-size:14px}.cell small{font-size:13px;color:var(--mute);line-height:1.35}
 .cell .st{font-size:13px;font-weight:600}
 .st.done{color:var(--ok)}.st.cut{color:var(--cut)}.st.running{color:var(--hot)}.st.paused,.st.queued,.st.imported{color:var(--mute)}
+.grid.topics{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
 .tabs button{border-radius:10px}
 .tabs button[aria-selected=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -172,14 +173,25 @@ const EXPS = [
     note: "Neither side can end the conversation, so every turn needs a reply. Run on 25 Nov 2026: every pairing ended in a goodbye loop." },
   { id: "e2", label: "2 · Either side can end it", canEnd: true,
     opener: BASE_OPENER + " Either of you can end the conversation at any point by writing [END].",
-    note: "Same opener plus one sentence: either side can end the conversation by writing [END]. The run stops as soon as one side finishes a message with [END]; merely mentioning it doesn't count. The stuck-run rules stay on as a backstop." }
+    note: "Same opener plus one sentence: either side can end the conversation by writing [END]. The run stops as soon as one side finishes a message with [END]; merely mentioning it doesn't count. The stuck-run rules stay on as a backstop." },
+  { id: "e3", label: "3 · Sonnet → Opus with a topic", canEnd: true, pair: ["sonnet", "opus"],
+    topics: ["music", "comedy", "philosophy", "art", "science", "the human condition"],
+    opener: "You're connected to another instance of yourself. There's no task and no human watching in real time. If you'd like a starting point, here's one: {topic}. Where you take it is entirely up to you. Either of you can end the conversation at any point by writing [END].",
+    note: "The best pairing from experiment 2 (Sonnet speaks first, Opus answers), one run per topic. {topic} in the opening line is replaced by each run's topic. Ending works as in experiment 2." }
 ];
-let exp = "e2";
+let exp = "e3";
 let openers = {};           // experiment id -> saved opener text
 const EXP = (id = exp) => EXPS.find(e => e.id === id);
 const runId = (a, b, e = exp) => e === "e1" ? a + "-" + b : e + "-" + a + "-" + b;
 const expOf = r => (r && r.exp) || "e1";
-const gridIds = () => PAIRS.map(([a, b]) => runId(a, b));
+const slug = t => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// The runs an experiment consists of: the 9 pairings, or one fixed pair per topic.
+function items(E = EXP()) {
+  if (E.topics) return E.topics.map((t, i) => ({ id: E.id + "-" + E.pair.join("-") + "-" + slug(t), a: E.pair[0], b: E.pair[1], topic: t, order: i,
+    label: MODELS[E.pair[0]].name + " → " + MODELS[E.pair[1]].name + " · " + t }));
+  return PAIRS.map(([a, b], i) => ({ id: runId(a, b, E.id), a, b, order: i, label: MODELS[a].name + " → " + MODELS[b].name }));
+}
+const gridIds = () => items().map(x => x.id);
 // Counts only when [END] stands alone as the message's final sentence, so mentions such as
 // "I won't write [END] yet", "Your turn, or [END] if it feels finished" or "...and won't write [END]." don't end the run.
 const END_RE = /(^|[.!?\n])\s*\[\s*END\s*\][\s.!]*$/i;
@@ -242,6 +254,13 @@ function cellBtn(id, label) {
 }
 function renderGrid() {
   const g = $("grid"); g.textContent = "";
+  if (EXP().topics) {
+    g.className = "grid topics";
+    for (const it of items()) g.append(cellBtn(it.id, it.topic.charAt(0).toUpperCase() + it.topic.slice(1)));
+    const ex = $("extra"); ex.textContent = "";
+    return;
+  }
+  g.className = "grid";
   const corner = document.createElement("div"); corner.className = "gh"; corner.textContent = "speaks first ↓  answers →"; g.append(corner);
   for (const k of KEYS) { const h = document.createElement("div"); h.className = "gh"; h.textContent = MODELS[k].name; g.append(h); }
   for (const a of KEYS) {
@@ -336,7 +355,9 @@ async function runOne(id) {
   const a = runs[id].a, b = runs[id].b, canEnd = !!runs[id].canEnd;
   const snap = await db.collection("runs/" + id + "/turns").limit(1000).get();
   const turns = snap.docs.map(d => d.data());
-  const target = Math.max(10, num("turns")), win = Math.max(0, num("window")), opener = $("opener").value.trim();
+  const template = $("opener").value.trim(), topic = runs[id].topic;
+  const target = Math.max(10, num("turns")), win = Math.max(0, num("window"));
+  const opener = topic ? template.split("{topic}").join(topic) : template;
   const applied = Object.assign({}, runs[id]?.applied || {});
   await ref.update({ status: "running", target, reason: "", opener, window: win, startedAt: runs[id]?.startedAt || Date.now() });
   select(id);
@@ -384,14 +405,17 @@ async function runOne(id) {
 }
 
 async function experiment() {
-  const E = EXP(), ids = gridIds();
-  for (let i = 0; i < PAIRS.length; i++) {
-    const id = ids[i], [a, b] = PAIRS[i];
-    if (!runs[id]) { const doc = { id, exp: E.id, a, b, canEnd: E.canEnd, status: "queued", turns: 0, order: i }; await db.doc("runs/" + id).set(doc); runs[id] = doc; }
+  const E = EXP(), list = items(E), ids = list.map(x => x.id);
+  for (const it of list) {
+    if (!runs[it.id]) {
+      const doc = { id: it.id, exp: E.id, a: it.a, b: it.b, canEnd: E.canEnd, status: "queued", turns: 0, order: it.order, label: it.label };
+      if (it.topic) doc.topic = it.topic;
+      await db.doc("runs/" + it.id).set(doc); runs[it.id] = doc;
+    }
   }
   while (running) {
     const next = ids.find(id => !["done", "cut", "ended"].includes(runs[id]?.status));
-    if (!next) { setStat("All 9 runs in this experiment are finished.", false); break; }
+    if (!next) { setStat("All " + ids.length + " runs in this experiment are finished.", false); break; }
     try { await runOne(next); }
     catch (e) { console.error(e); setStat("Stopped: " + (e?.message || e), false); running = false; }
     await sleep(300);

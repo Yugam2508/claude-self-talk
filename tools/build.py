@@ -14,8 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 NAMES = {"haiku": "Haiku", "sonnet": "Sonnet", "opus": "Opus"}
 PAIRS = ["haiku-haiku", "haiku-sonnet", "sonnet-haiku", "sonnet-sonnet", "haiku-opus",
          "opus-haiku", "sonnet-opus", "opus-sonnet", "opus-opus"]
-ORDER = PAIRS + ["pilot-sonnet"] + ["e2-" + p for p in PAIRS]
-EXPERIMENTS = {"e1": "Experiment 1: no way to end the conversation", "e2": "Experiment 2: either side can end it by writing [END]"}
+TOPICS = ["music", "comedy", "philosophy", "art", "science", "the-human-condition"]
+ORDER = PAIRS + ["pilot-sonnet"] + ["e2-" + p for p in PAIRS] + ["e3-sonnet-opus-" + t for t in TOPICS]
+EXPERIMENTS = {"e1": "Experiment 1: no way to end the conversation",
+               "e2": "Experiment 2: either side can end it by writing [END]",
+               "e3": "Experiment 3: Sonnet → Opus with a starting topic"}
 
 
 def exp_of(rid):
@@ -168,7 +171,7 @@ def main():
     md += ["", "## Theme counts (turns mentioning each theme, all experiments)", "",
            "| Run | " + " | ".join(THEMES) + " |", "|---|" + "---:|" * len(THEMES)]
     for rid, lab, s in rows:
-        md.append(f"| {lab}{' (exp 2)' if exp_of(rid) == 'e2' else ''} | " + " | ".join(str(s["themes"][k]) for k in THEMES) + " |")
+        md.append(f"| {lab}{' (exp ' + exp_of(rid)[1] + ')' if exp_of(rid) != 'e1' else ''} | " + " | ".join(str(s["themes"][k]) for k in THEMES) + " |")
     (ROOT / "results/summary.md").write_text("\n".join(md) + "\n")
     print(f"built {len(rows)} runs")
 

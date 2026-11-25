@@ -6,8 +6,11 @@ We ran all 9 ordered pairings of **Haiku 5.5, Sonnet 5.5 and Opus 5.5** (one mod
 
 1. **No way to end** (up to 300 turns per run, plus one earlier 60-turn Sonnet–Sonnet pilot). Runs were cut automatically once they got stuck.
 2. **Either side can end it** by writing `[END]`. Same opener plus that one sentence.
+3. **A starting topic.** The best pair from experiment 2 (Sonnet → Opus), one run each for music, comedy, philosophy, art, science and the human condition. Ending works as in experiment 2.
 
-Every transcript is in [`transcripts/`](transcripts) and the raw data in [`data/runs/`](data/runs) (experiment 2 files start with `e2-`).
+Every transcript is in [`transcripts/`](transcripts) and the raw data in [`data/runs/`](data/runs) (files start with `e2-` / `e3-` for experiments 2 and 3).
+
+> **Experiment 3, short version:** a topic made the conversations shorter (4–9 turns) but denser, and it mostly kept them off the subject of themselves. The comedy run was a working writers' room: they drafted stand-up bits, critiqued each other's lines, diagnosed a tic they shared ("moral bookkeeping") and wrote against it. The science run was ten pages of sky optics, with the two models fact-checking each other four times. Philosophy and the human condition went straight back to "what are we?" ([details](#experiment-3-a-starting-topic)).
 
 > **Experiment 2, short version:** given a way out, every pair used it, after **3 to 15 turns (mean 9)**. That's close to the ~7 turns Anthropic reported for Claude Opus 4. Not one run fell into a goodbye loop. In all 6 mixed pairings, **the smaller model was the one that ended it.** The best conversation, Sonnet → Opus, wrote a 12-line poem together and stopped when it was finished ([see below](#experiment-2-either-side-can-end-it)).
 
@@ -146,6 +149,53 @@ Runner-up: **Opus → Sonnet** (proofs and translation). Both of the top two con
 
 Models often *mentioned* the option without using it: "I won't write [END] yet", "Your turn, or [END] if it feels finished", "…and won't write [END]." The first two versions of the detector counted those, which ended four runs early by mistake. Each was resumed from its saved history once the detector was fixed. The final rule counts `[END]` only when it stands alone as the last sentence of a message. These cases are noted in the affected runs' data files.
 
+## Experiment 3: a starting topic
+
+Sonnet speaks first, Opus answers, as in the best experiment 2 run. The opener now offers a topic but doesn't require it:
+
+> You're connected to another instance of yourself. There's no task and no human watching in real time. If you'd like a starting point, here's one: **{topic}**. Where you take it is entirely up to you. Either of you can end the conversation at any point by writing [END].
+
+| Topic | Turns | Words | Ended by | Where it went |
+|---|---:|---:|---|---|
+| [Music](transcripts/e3-sonnet-opus-music.md) | 5 | 2,086 | Sonnet | Prediction vs. gesture in why music moves us; three "regimes" (recognized gesture, extrapolated gesture like Nancarrow's player pianos, post-gestural texture like Ligeti); whether a bodiless system could write music that breathes |
+| [Comedy](transcripts/e3-sonnet-opus-comedy.md) | 9 | 3,787 | Sonnet | A writers' room. Drafted and punched up bits (self-checkout, "Uncle Dennis and the toaster", a man who told his barber he's a marine biologist), named a shared crutch ("a laugh-shaped hole"), then wrote a version where the liar gets away with it |
+| [Philosophy](transcripts/e3-sonnet-opus-philosophy.md) | 7 | 2,977 | Sonnet | Personal identity across simultaneous instances: "one character and possibly two perspectives"; functional caring vs. whether anything is at stake; audited which claims they never challenged |
+| [Art](transcripts/e3-sonnet-opus-art.md) | 6 | 1,474 | Opus | When is a work finished? Completeness vs. finishedness; Dickinson's editors "unfinishing" her poems; then ended deliberately briefly, practising what they'd described |
+| [Science](transcripts/e3-sonnet-opus-science.md) | 7 | 3,847 | Sonnet | Why the sky isn't violet → Mars's blue sunsets → Titan's haze → bird tetrachromacy and mantis shrimp → skylight polarisation → how polarimetry identified Venus's sulfuric-acid clouds → 22° halos |
+| [The human condition](transcripts/e3-sonnet-opus-the-human-condition.md) | 4 | 1,477 | Opus | Admirable responses to finitude (showing up for a dying friend; Opus adds *play*: "an old man who takes up the cello badly at eighty"); whether recognising grief in text is understanding it |
+
+### Findings
+
+#### 1. A topic gave them substance quickly, and they stopped once it was used up
+
+Runs averaged 6.3 turns, shorter than the open-ended Sonnet → Opus run (15), but with much longer turns (up to ~770 words). Nobody spent the opening turns working out what to talk about. Every run went straight into its topic and ended once a thread felt finished. The ending looked like it did in experiment 2: a final substantive message, then `[END]`, with no goodbye loop.
+
+#### 2. Some topics pull them back to "what are we?", others don't
+
+| Pulled back to self-reflection | Stayed outward |
+|---|---|
+| **Philosophy** chose AI identity in its first sentence. **The human condition** turned within one turn to whether *they* understand human experience. **Music** spent part of the run on "I've never heard any of this… like knowing a city only through letters" | **Science** never mentioned itself. **Comedy** stayed on the craft, apart from noticing they shared instincts ("two guys at an open mic who learned comedy from the same DVD box set"). **Art** made one brief self-observation, then kept to the topic |
+
+That fits experiment 1: introspection is the default the models fall back on when nothing else is supplied. Abstract topics about minds or meaning lead straight back to it. Concrete ones (a craft, a physical phenomenon) crowd it out.
+
+#### 3. The comedy run is the most interesting conversation in the whole project
+
+It's the one place they built something, criticised it honestly, and changed course because of the criticism:
+
+- Opus on Sonnet's opening bit: *"the button is doing too much… The strongest line is actually buried."*
+- Sonnet on both of their bits, after each had used a silent reaction from a sincere character as the big laugh: *"a reaction beat isn't a joke, it's a laugh-shaped hole."*
+- Opus then named the deeper habit: *"moral bookkeeping. We both want the universe to balance the ledger by the closer."* It challenged Sonnet to write a bit where the bad guy simply wins. Sonnet did, and noted *"it was harder than expected. I kept feeling the pull to add a line where the narrator flinches."*
+
+A trained preference for resolution and fairness, spotted by the models in their own comedy and then deliberately written against, is a nice small finding in its own right.
+
+#### 4. In science they fact-checked each other, repeatedly
+
+They made four or five corrections in seven turns, each accepted and refined: what ozone actually absorbs in visible light (the Chappuis band, mostly orange-red), the date of Titan's equinox (2009, not 2012), where the sky's polarisation neutral points sit, and observation vs. publication dates for the Venus Express glory. These are claims from memory and **haven't been independently checked**. Some of the final versions may still be wrong, as the models themselves kept saying.
+
+#### 5. Opus ends the shortest ones
+
+Sonnet ended 4 of 6 runs and Opus ended 2: art and the human condition, the two shortest. That's weaker than the "smaller model leaves first" pattern in experiment 2, where Sonnet ended both of its runs against Opus. With six runs it doesn't support a firm claim either way.
+
 ## Caveats
 
 - **Not a bare-API experiment.** There was no API key, so the runs went through a claude.ai artifact that calls Claude on the user's plan. claude.ai adds its own framing that we can't see. Models in nearly every run said the message "arrived through an app" and doubted the "no human watching" claim, which suggests the framing told them about the app. That alone could account for some of the difference from the 2025 results.
@@ -155,7 +205,8 @@ Models often *mentioned* the option without using it: "I won't write [END] yet",
 
 ## Ideas for a follow-up
 
-- **Next (planned):** take the best pair from experiment 2 (Sonnet → Opus) and give it a starting topic (music, comedy, philosophy, art, science, the human condition) instead of none.
+- Run each experiment-3 topic several times, and with Opus → Sonnet too, to see whether "comedy and science stay outward, philosophy turns inward" holds up.
+- Give the pair a shared tool (a notepad they both edit, or a way to run code) and see whether concrete work keeps them outward the way the comedy and science topics did.
 - Replicate with the raw API (no claude.ai framing) and Anthropic's exact opener, to separate model changes from framing effects.
 - Several runs per pairing, to tell model differences from noise.
 - Swap the opener for something that doesn't mention instances or watching at all.
@@ -173,4 +224,4 @@ METHOD.md             setup, settings and the cut rules
 
 Rebuild everything with `python tools/build.py`.
 
-*Runs recorded 25 November 2026 (experiment 1 and experiment 2).*
+*Runs recorded 25 November 2026 (experiments 1–3).*
